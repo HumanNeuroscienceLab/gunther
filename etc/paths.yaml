@@ -1,0 +1,12 @@
+anat:
+  .dir: "${subdir}/anat"
+  head: "${anatdir}/head.nii.gz"
+  brain: "${anatdir}/brain.nii.gz"
+  brain_mask: "${anatdir}/brain_mask.nii.gz"
+  
+  reg:
+    .dir: "${anatdir}/reg"
+  
+  segment:
+    .dir: "${anatdir}/segment"
+  

@@ -1,0 +1,4 @@
+rest: *_rest.nii.gz
+dynamic_loc: *_dynamic_loc_*.nii.gz
+static_loc: *_static_loc_*.nii.gz
+raiders_movie: *_raiders_movie_*.nii.gz
