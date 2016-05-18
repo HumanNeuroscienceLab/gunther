@@ -136,7 +136,7 @@ log_cmd "bash anat03_segment_freesurfer.sh -s ${subject} --sd ${sddir} -r ${nthr
 ### atlases
 log_echo "=== Atlases"
 if [[ -z ${raw['t2']} ]]; then
-  log_cmd "bash anat04_parcellate_freesurfer.sh -s ${subject} --sd ${sddir} --t2 ${raw['t2']} -r ${nthreads} -o ${anat[atlases]}"
+  log_cmd "bash anat04_parcellate_freesurfer.sh -s ${subject} --sd ${sddir} -r ${nthreads} -o ${anat[atlases]}"
 else
   log_cmd "bash anat04_parcellate_freesurfer.sh -s ${subject} --sd ${sddir} --t2 ${raw['t2']} -r ${nthreads} -o ${anat[atlases]}"
 fi
