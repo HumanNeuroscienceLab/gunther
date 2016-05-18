@@ -65,10 +65,16 @@ function log_echo() {
   echo "$@" | tee -a ${_LOG_FILE}
 }
 
+# log_tcmd 'command' 'output-file for history (if given)'
 function log_tcmd {
-  log_echo "[$(date +'%b %e %R')]: $@"
-  log_exec "$@"
-  ret="$?"
+  log_echo "[$(date +'%b %e %R')]: $1"
+  log_exec "$1"
+  ret=$?
+  
+  if [ ! -z "$2" ] && [ -e "$2" ] && [ $ret -eq 0 ]; then
+    log_exec "3dNotes -h '$1' $2"
+  fi
+  
   return $ret
 }
 
