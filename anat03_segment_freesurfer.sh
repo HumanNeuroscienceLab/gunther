@@ -70,7 +70,7 @@ log_echo "Copy freesurfer outputs to our output folder"
 log_echo "and convert volume space labels from mgz to individual nifti files"
 
 log_tcmd "mri_convert -rl ${freedir}/mri/rawavg.mgz -rt nearest ${freedir}/mri/aseg.mgz ${outdir}/aseg${ext}"
-log_tcmd "$python ${GUNTHERDIR}/anat_freesurfer_split.py ${outdir}/aseg${ext} ${outdir}/subcortical"
+log_tcmd "$python ${GUNTHERDIR}/anat_freesurfer_split.py ${outdir}/aseg${ext} ${outdir}/aseg"
 
 
 # TODO: soft-link the relevant tissues into the main output directory
