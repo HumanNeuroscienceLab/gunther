@@ -5,6 +5,7 @@ import os
 import argparse
 import re
 import tempfile
+import nibabel as nib
 
 # This script will compile an FSL Feat Design File for the first level
 
@@ -16,6 +17,7 @@ class GenerateFSF(object):
     self.template_file = template_file
     self.data_vars = {}
     self.stats_vars = {}
+    self.poststats_vars = {}
     self.evs = []
     self.ev_names = []
     self.contrasts = []
@@ -39,7 +41,7 @@ class GenerateFSF(object):
     
       Returns
       -------
-    
+      
       Examples
       --------
       >>> tmp = GenerateFSF('template.fsf')
@@ -48,9 +50,15 @@ class GenerateFSF(object):
     if high_pass is None:
       high_pass = 100
     high_pass_yn = int(apply_filter)
+    if os.path.exists(input_file):
+      hdr = nib.load(input_file)
+      nvols = hdr.shape[3]
+    else:
+      print('setting nvols to 0')
+      nvols = 0
     data_vars = {'input_file': input_file, 'output_dir': output_dir, 
                 'tr': float(tr), 'high_pass': float(high_pass), 
-                'high_pass_yn': high_pass_yn}
+                'high_pass_yn': high_pass_yn, 'nvols': nvols}
     self.data_vars = data_vars
     return
   
@@ -64,6 +72,12 @@ class GenerateFSF(object):
     else:
       self.stats_vars['confound_yn'] = 1
       self.stats_vars['confound_file'] = confounds
+    return
+  
+  def set_poststats(self, run_poststats=True, prob_thresh=0.05, z_thresh=2.3):
+    self.poststats_vars['poststats_yn'] = int(run_poststats)
+    self.poststats_vars['prob_thresh'] = float(prob_thresh)
+    self.poststats_vars['z_thresh'] = float(z_thresh)
     return
   
   def add_ev(self, title, fpath, model='gamma', filter=True, derivative=False):
@@ -137,6 +151,7 @@ class GenerateFSF(object):
     namespace = {}
     namespace.update(self.data_vars)
     namespace.update(self.stats_vars)
+    namespace.update(self.poststats_vars)
     namespace['nevs'] = len(self.evs)
     namespace['ncons'] = len(self.contrasts)
     namespace['evs'] = self.evs
@@ -155,7 +170,9 @@ class GenerateFSF(object):
     # this should model the compiled file with feat_model
     if self.outfile is None:
       Exception("outfile is None")
-    retcode = os.system("feat_model %s" % self.outfile)
+    cmd = "feat_model %s" % self.outfile.replace(".fsf", "")
+    print(cmd)
+    retcode = os.system(cmd)
     if retcode != 0:
       print("Non-zero (%i) exit!!!" % retcode)
     return retcode
@@ -280,6 +297,12 @@ if __name__ == "__main__":
   stats_tab.add_argument("--confounds", action=store_stats, metavar="FILE", 
                           help="Additional confound EVs stored in a text file with each column as an EV")
 
+  # Post-Stats
+  poststats_tab = parser.add_argument_group('Post-Stats Tab')
+  poststats_tab.add_argument("--no-post-stats", action="store_false", dest="run_poststats", default=True, help="Will not run post-stats")
+  poststats_tab.add_argument("--post-stats", action="store", nargs=2, metavar="z_thresh prob_thresh", 
+                              default=[2.3, 0.05], help="Set the post-stats options for the voxel Z-thresh and cluster p-thresh")
+  
   # EVs
   evs_group = parser.add_argument_group('Explanatory Variables (EVs)')
   evs_group.add_argument("--stim", action=store_ev, nargs=3, 
@@ -317,9 +340,11 @@ if __name__ == "__main__":
     tmpfile = True
 
   # Load up the template
-  fsf = GenerateFSF('etc/template.fsf')
+  guntherdir = os.path.dirname(os.path.realpath(__file__))
+  fsf = GenerateFSF('%s/etc/template.fsf' % guntherdir)
   fsf.set_data(**args.data)
   fsf.set_stats(**args.stats)
+  fsf.set_poststats(run_poststats=args.run_poststats, z_thresh=args.post_stats[0], prob_thresh=args.post_stats[1])
   for ev in args.evs:
     fsf.add_ev(**ev)
   for contrast in args.contrasts:

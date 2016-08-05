@@ -60,6 +60,7 @@ log_cmd "mkdir -p ${outdir}"
 
 ### RUN FREESURFER ###
 
+log_time
 if [ ! -e "${freedir}/mri/aparc+aseg.mgz" -o ! -e "${freedir}/mri/wmparc.mgz" -o $overwrite == "true" ]; then
   if [[ ! -z ${t2} ]]; then
     log_cmd "recon-all -s ${subject} -sd ${sd} -no-isrunning -T2 ${t2} -T2pial -autorecon3 -openmp ${threads}"

@@ -24,7 +24,6 @@ cmdarg "i:" "inputs" "Path to functional runs to preprocess"
 cmdarg "o:" "outprefix" "Output prefix for final brain mask (*_mask) and masked functional runs (*_run*)"
 cmdarg "w:" "workdir" "Path to working directory"
 ## optional inputs
-cmdarg "p" "plot" "Generate plots of skull-stripping" false
 cmdarg "k" "keepwdir" "Keep working directory" false
 cmdarg "f" "force" "Will overwrite any existing output" false
 cmdarg "l?" "log" "Log file"
@@ -38,7 +37,6 @@ cmdarg_parse "$@"
 inputs=( ${cmdarg_cfg['inputs']} )
 outprefix=${cmdarg_cfg['outprefix']}
 workdir=${cmdarg_cfg['workdir']}
-plot=${cmdarg_cfg['plot']}
 keepwdir=${cmdarg_cfg['keepwdir']}
 overwrite=${cmdarg_cfg['force']}
 _LOG_FILE=${cmdarg_cfg['log']}
@@ -111,64 +109,83 @@ log_echo "Combine mean EPIs from each run"
 log_tcmd "3dTcat -prefix ${workprefix}_mean${ext} ${workprefix}_mean_run*${ext}"
 
 
-log_echo "== FSL Stripping"
+log_echo "== Strip Step-1"
 
 log_echo "Initial skull strip"
 log_tcmd "bet2 ${workprefix}_mean${ext} mask -f 0.3 -n -m" "mask${ext}"
-log_tcmd "immv mask_mask fsl_mask1" # fancy mv that figures out extension; and this is in working directory
+log_tcmd "immv mask_mask mask1" # fancy mv that figures out extension; and this is in working directory
 
-log_echo "Apply initial mask"
-log_tcmd "3dcalc -a ${workprefix}_mean${ext} -b fsl_mask1${ext} -expr 'a*step(b)' -prefix ${workprefix}_mean_bet${ext}"
-
-log_echo "Get the max of the robust range"
-robust_max=`fslstats ${workprefix}_mean_bet -p 2 -p 98 | awk '{print $2}'`
-log_echo "robust_max=${robust_max}"
-
-log_echo "Threshold background signal using 10% of robust range"
-robust_max_thr=`echo "${robust_max} * 0.1" | bc -l`
-log_echo "robust_max_thr=${robust_max_thr}"
-log_tcmd "fslmaths ${workprefix}_mean_bet -thr ${robust_max_thr} -Tmin -bin fsl_mask2 -odt char" "fsl_mask2${ext}"
-
-log_echo "Dilate the constrained mask for the final liberal mask"
-log_tcmd "fslmaths fsl_mask2 -dilF fsl_mask3" "fsl_mask3${ext}"
-
-
-log_echo "== AFNI Stripping"
-
-log_tcmd "3dAutomask -dilate 1 -prefix afni_mask1${ext} ${workprefix}_mean${ext}"
-
-
-log_echo "== Combine FSL and AFNI Masks (OR operation)"
-
-log_tcmd "3dcalc -a fsl_mask3${ext} -b afni_mask1${ext} -expr 'step(a+b)' -prefix mask${ext}"
-log_tcmd "3dcalc -a mask${ext} -expr a -prefix ${outprefix}_mask${ext}"
-
-
-log_echo "== Apply Final Mask"
-
-log_echo "Apply to input functional data"
+log_echo "Apply initial masks"
 for run in ${pruns[@]}; do
   log_echo "...run ${run}"
   i=$( echo "$run - 1" | bc -l )
-  log_tcmd "3dcalc -a ${inputs[i]} -b ${outprefix}_mask${ext} -expr 'a*step(b)' -prefix ${outprefix}_run${run}${ext} -datum float"
+  log_tcmd "3dcalc -a ${inputs[i]} -b mask1${ext} -expr 'a*step(b)' -prefix ${workprefix}_bet_run${run}${ext}"
+done
+
+
+log_echo "== Strip Step-2"
+
+log_echo "Get the max of the robust range"
+robust_max=0
+for run in ${pruns[@]}; do
+  temp=`fslstats ${workprefix}_bet_run${run} -p 2 -p 98 | awk '{print $2}'`
+  temp2=`echo $temp '>' $robust_max | bc -l`
+  if [ $temp2 == 1 ]; then robust_max=$temp; fi
+done
+log_echo "... robust_max = ${robust_max}"
+
+log_echo "Threshold background signal using 10% of robust range"
+robust_max_thr=`echo "$robust_max * 0.1" | bc -l`
+log_echo "... threshold = ${robust_max_thr}"
+for run in ${pruns[@]}; do
+  log_echo "...run ${run}"
+  log_tcmd "fslmaths ${workprefix}_bet_run${run} -thr ${robust_max_thr} -Tmin -bin mask2_run${run} -odt char" "mask2_run${run}${ext}"
+done
+log_tcmd "3dMean -mask_inter -prefix mask2${ext} mask2_run*${ext}"
+
+
+log_echo "== Strip Step-3"
+
+log_echo "Dilate the constrained mask for the final liberal mask"
+log_tcmd "fslmaths mask2 -dilF mask3" "mask3${ext}"
+
+log_echo "Apply final brain mask"
+for run in ${pruns[@]}; do
+  log_echo "...run ${run}"
+  i=$( echo "$run - 1" | bc -l )
+  log_tcmd "3dcalc -a ${inputs[i]} -b mask3${ext} -expr 'a*step(b)' -prefix ${outprefix}_run${run}${ext} -datum float"
   log_tcmd "ln -sf ${outprefix}_run${run}${ext} ${workprefix}_thresh_run${run}${ext}"
 done
 
-log_echo "Apply to mean functional"
-log_tcmd "3dcalc -a ${workprefix}_mean${ext} -b mask${ext} -expr 'a*step(b)' -prefix ${outprefix}_mean${ext}"
+log_tcmd "cp mask3${ext} ${outprefix}_mask${ext}" "${outprefix}_mask${ext}"
 
 
-log_echo "== Pictures"
-
-if [ ${plot} == true ]; then
-  log_tcmd "slicer.py --crop -w 5 -l 4 -s axial ${workprefix}_mean${ext} ${outprefix}_head_axial.png"
-  log_tcmd "slicer.py --crop -w 5 -l 4 -s sagittal ${workprefix}_mean${ext} ${outprefix}_head_sagittal.png"
-  log_tcmd "slicer.py --crop -w 5 -l 4 -s axial --overlay mask${ext} 1 1 -t ${workprefix}_mean${ext} ${outprefix}_axial.png"
-  log_tcmd "slicer.py --crop -w 5 -l 4 -s sagittal --overlay mask${ext} 1 1 -t ${workprefix}_mean${ext} ${outprefix}_sagittal.png"
-fi
+log_echo "== Mean Functional"
+for run in ${pruns[@]}; do
+  log_echo "...run ${run}"
+  log_tcmd "3dTstat -mean -prefix mean_func_run${run}${ext} ${workprefix}_thresh_run${run}${ext}"
+done
+log_tcmd "3dMean -overwrite -prefix ${outprefix}_mean${ext} mean_func_run*${ext}"
 
 
-log_echo "== Clean Up"
+#--- End ---#
+
+#log_echo "===="
+#log_echo "Copy output files"
+#
+#log_echo "Mean Functional (also known here as the example functional)"
+#log_tcmd "fslmaths mean_func${ext} ${outdir}/mean_func${ext}"
+#log_tcmd "ln -sf ${outdir}/mean_func${ext} ${outdir}/example_func${ext}"
+#
+#log_echo "Mask"
+#log_tcmd "fslmaths mask3 ${outdir}/mask"
+#
+#log_echo "Preprocessed functional runs"
+#for run in ${pruns[@]}; do
+#  log_cmd "fslmaths ${workprefix}_tempfilt_run${run} ${outdir}/filtered_func_run${run}"
+#done
+
+log_echo "Clean up"
 # clean up the working directory
 if [ $keepwdir == false ]; then
   log_echo "Removing working directory"

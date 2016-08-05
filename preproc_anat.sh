@@ -1,5 +1,7 @@
 #!/bin/bash
 
+export GUNTHERDIR=/mnt/nfs/share/scripts/gunther # HACK
+
 # Goals
 # -----
 # 
@@ -14,16 +16,17 @@
 
 #### Usage ####
 
-source cmdarg.sh
+source ${GUNTHERDIR}/include/cmdarg.sh
 
 cmdarg_info "header" "Script for preprocessing anatomical image"
 cmdarg_info "author" "McCarthy Lab <some address>"
 ## required inputs
 cmdarg "s:" "subject" "Freesurfer subject id"
-cmdarg "p:" "project" "Project directory"
+cmdarg "d:" "studydir" "Study directory"
 ## optional inputs
-cmdarg "r:" "threads" "Number of OpenMP threads to use with FreeSurfer" 1
-cmdarg "i?" "input" "Path to optional high-resolution anatomical"
+cmdarg "c:" "threads" "Number of OpenMP threads to use with FreeSurfer" 1
+cmdarg "i:" "input" "Path to high-resolution T1 anatomical"
+cmdarg "t?" "t2" "Path to high-resolution T2 anatomical"
 
 ## parse
 cmdarg_parse "$@"
@@ -34,63 +37,22 @@ cmdarg_parse "$@"
 #### Set User Variables ####
 
 subject=${cmdarg_cfg['subject']}
-studydir=${cmdarg_cfg['project']}
+studydir=${cmdarg_cfg['studydir']}
 input=${cmdarg_cfg['input']}
+t2=${cmdarg_cfg['t2']}
 nthreads=${cmdarg_cfg['threads']}
-
-
-#### Set Semi-Auto Variables ####
-
-# TODO: move these to another script
-
-# Raw/Original files
-rawdir="${studydir}/data/nifti/${subject}"
-raw['dir']="${rawdir}"
-raw['highres']="${rawdir}/${subject}_t1w.nii.gz"
-raw['t2']="${rawdir}/${subject}_t2w.nii.gz"
-
-# General
-preprocdir="${studydir}/analysis/preprocessed/${subject}"
-sddir="${studydir}/analysis/freesurfer"
-freesurferdir="${studydir}/analysis/freesurfer/${subject}"
-
-# Anatomical files
-anatdir="${preprocdir}/anat"
-declare -a anat
-anat['_dir']="${anatdir}"
-anat['log']="${anatdir}/log_date-$(date +'%Y-%m-%d')_time-$(date +'%H-%M-%s').txt"
-## input
-anat['head']="${anatdir}/head.nii.gz"
-## skull-strip script
-anat['skullstrip']="${anatdir}/skullstrip"
-anat['skullstrip_prefix']="${anatdir}/skullstrip/brain"
-anat['skullstrip_brain']="${anatdir}/skullstrip/brain.nii.gz"
-anat['skullstrip_brainmask']="${anatdir}/skullstrip/brain_mask.nii.gz"
-## registration script
-anat['reg']="${anatdir}/reg" # TODO: name individual registration files?
-## segmentation script
-anat['segment']="${anatdir}/segment"
-## atlases script
-anat['atlases']="${anatdir}/atlases"
-## done text
-anat['done']="${anatdir}/done"
-
-
-#### Set Default Variables if Needed ####
-
-if [ -z ${input} ]; then
-  input=${raw[highres]}
-fi
 
 
 #### Setup ####
 
-[ ! -e ${preprocdir} ] && log_cmd "mkdir ${preprocdir}"
-[ ! -e ${freesurferdir} ] && log_cmd "mkdir ${freesurferdir}"
-[ ! -e ${preprocdir} ] && log_cmd "mkdir ${anat[_dir]}"
-log_cmd2 "_LOG_FILE=${anat[log]}"
-
 ext=".nii.gz"
+
+
+#### Paths ####
+
+source ${GUNTHERDIR}/include/paths.sh
+create_subject_dirs
+set_anat_logfile
 
 
 #### Log ####
@@ -108,6 +70,8 @@ log_echo "RUNNING: $0 $@"
 source ${GUNTHERDIR}/include/io.sh
 
 check_inputs ${input}
+[ ! -z ${t2} ] && check_inputs ${t2}
+
 check_outputs ${anat[done]}
 # if overwrite, then remove the skullstrip, reg, segment, and atlases, etc folders
 
@@ -118,27 +82,27 @@ check_outputs ${anat[done]}
 
 ### input file
 log_echo "=== Copy over main file"
-log_cmd "3dcopy ${input} ${anat[head]}"
+log_tcmd "3dcopy ${input} ${anat[head]}"
 
 ### skull-strip
 log_echo "=== Skullstrip"
 log_cmd "mkdir ${anat[skullstrip]}"
-log_cmd "bash anat01_skullstrip.sh -i ${anat[head]} -s ${subject} --sd ${sddir} -o ${anat[skullstrip]}"
+log_tcmd "bash anat01_skullstrip.sh -p -r ${nthreads} -i ${anat[head]} -s ${subject} --sd ${sddir} -o ${anat[skullstrip]}"
 
 ### register to standard
 log_echo "=== Register to Standard Space"
-log_cmd "bash anat02_register_to_standard.sh -i ${anat[skullstrip_brain]} -a ${anat[head]} -o ${anat[reg]}"
+log_tcmd "bash anat02_register_to_standard.sh -i ${anat[skullstrip_brain]} -a ${anat[head]} -o ${anat[reg]}"
 
-### segment (for now only with freesurfer)
+## segment (for now only with freesurfer)
 log_echo "=== Segment"
-log_cmd "bash anat03_segment_freesurfer.sh -s ${subject} --sd ${sddir} -r ${nthreads} -o ${anat[atlases]}"
+log_tcmd "bash anat03_segment_freesurfer.sh -s ${subject} --sd ${sddir} -r ${nthreads} -o ${anat[segment]}"
 
 ### atlases
 log_echo "=== Atlases"
-if [[ -z ${raw['t2']} ]]; then
-  log_cmd "bash anat04_parcellate_freesurfer.sh -s ${subject} --sd ${sddir} -r ${nthreads} -o ${anat[atlases]}"
+if [[ -z ${t2} ]]; then
+  log_tcmd "bash anat04_parcellate_freesurfer.sh -s ${subject} --sd ${sddir} -r ${nthreads} -o ${anat[atlases]}"
 else
-  log_cmd "bash anat04_parcellate_freesurfer.sh -s ${subject} --sd ${sddir} --t2 ${raw['t2']} -r ${nthreads} -o ${anat[atlases]}"
+  log_tcmd "bash anat04_parcellate_freesurfer.sh -s ${subject} --sd ${sddir} --t2 ${t2} -r ${nthreads} -o ${anat[atlases]}"
 fi
 
 ### done

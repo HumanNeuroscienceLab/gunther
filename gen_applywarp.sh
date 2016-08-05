@@ -12,7 +12,7 @@
 
 #### Usage ####
 
-source cmdarg.sh
+source ${GUNTHERDIR}/include/cmdarg.sh
 
 cmdarg_info "header" "Script for applying registration to other images"
 cmdarg_info "author" "McCarthy Lab <some address>"
@@ -22,10 +22,10 @@ cmdarg "r:" "reg" "Outputs of previously run registration (assumes that non-line
 cmdarg "w:" "warp" "Type of warp to use, can be: 'exfunc', 'highres', or 'standard' in the form of X-to-Y (e.g., highres-to-standard)"
 cmdarg "o:" "output" "Output transformed image"
 ## optional inputs
-cmdarg "n:" "linear" "Only use linear (not non-linear) registration for highres-to-standard (default: false or nonlinear)" false
+cmdarg "m?" "master" "An image that defines the output grid (default: target image for the registration)" ""
+cmdarg "k?" "mask" "Mask to be applied in reference space" ""
+cmdarg "n" "linear" "Only use linear (not non-linear) registration for highres-to-standard (default: false or nonlinear)" false
 cmdarg "t:" "interp" "Final interpolation to use and can be nn, linear, sinc, and spline (spline only for non-linear)" "trilinear"
-cmdarg "m:" "master" "An image that defines the output grid (default: target image for the registration)" ""
-cmdarg "k:" "mask" "Mask to be applied in reference space" ""
 cmdarg "f" "force" "Will overwrite any existing output" false
 cmdarg "l?" "log" "Log file"
 ## parse
@@ -44,48 +44,51 @@ master=${cmdarg_cfg['master']}
 mask=${cmdarg_cfg['mask']}
 overwrite=${cmdarg_cfg['force']}
 _LOG_FILE=${cmdarg_cfg['log']}
+[ ! -z $_LOG_FILE ] && _LOG_FILE=$( readlink -f ${_LOG_FILE} ) # absolute path (if exists)
 
 #CDIR="/mnt/nfs/share/guntherxr/bin"
 ext=".nii.gz"
 
-log_echo "Setup"
 
 #### Log ####
 
-source log.sh
+source ${GUNTHERDIR}/include/log.sh
 
-[ -e ${_LOG_FILE} ] && log_echo "WARNING: log file '${_LOG_FILE}' already exists"
+check_logfile
 
 log_echo ""
 log_echo "RUNNING: $0 $@"
 
+
 #### Checks/Setup ####
 
-source io.sh
-
-check_inputs "${input}" "$regdir"
-if [ -n "$master" ]; then check_inputs "$master"; fi
-check_outputs $overwrite "$output"
-
-###
-# Setup
-###
+source ${GUNTHERDIR}/include/io.sh
 
 log_echo "Setup"
 
+source=`echo $warp | awk -F- '{print $1}'`
+to=`echo $warp | awk -F- '{print $2}'`
+target=`echo $warp | awk -F- '{print $3}'`
+log_echo "${source} => ${target}"
+
 log_echo "Process warp input"
-sourceimg=`echo $warp|awk -F- '{print $1}'`
-targetimg=`echo $warp|awk -F- '{print $3}'`
-to=`echo $warp|awk -F- '{print $2}'`
-if [ -z "$sourceimg" -o -z "$targetimg" -o "$to" != "to" ]; then 
-  log_die("Error in parsing ${warp}. Must be X-to-Y.")
+if [ -z "$source" -o -z "$target" -o "$to" != "to" ]; then 
+  log_die "Error in parsing ${warp}. Must be X-to-Y."
 fi
-if [ "$sourceimg" != "exfunc" -a "$sourceimg" != "highres" -a "$sourceimg" != "standard" ]; then
-  log_die("Incorrect sourceimg: ${sourceimg}. Must be exfunc, highres, or standard")
+if [ "$source" != "exfunc" -a "$source" != "highres" -a "$source" != "standard" ]; then
+  log_die "Incorrect source: ${source}. Must be exfunc, highres, or standard"
 fi
-if [ "$targetimg" != "exfunc" -a "$targetimg" != "highres" -a "$targetimg" != "standard" ]; then
-  log_die("Incorrect targetimg: ${targetimg}. Must be exfunc, highres, or standard")
+if [ "$target" != "exfunc" -a "$target" != "highres" -a "$target" != "standard" ]; then
+  log_die "Incorrect target: ${target}. Must be exfunc, highres, or standard"
 fi
+
+log_echo "Check paths"
+
+check_inputs "${input}" "$regdir"
+[ -z "$master" ] && master="${regdir}/${target}${ext}"
+check_inputs "$master"
+
+check_outputs $overwrite "$output"
 
 log_echo "Changing directory to '${regdir}'"
 cd $regdir
@@ -96,23 +99,18 @@ cd $regdir
 ###
 
 log_echo "Apply registration"
-  
-if [ $targetimg == "standard" or $sourceimg == "standard" -a $linear == false ]; then
+
+[ $target != "standard" -a $source != "standard" ] && linear=true
+
+if [ $linear == false ]; then
   log_echo "Non-Linear: ${source} => ${target}"
   
   cmd="applywarp -i ${input}"
-  
-  if [ -z "$master" ]; then
-    cmd="$cmd -r ${regdir}/${target}${ext}"
-  else
-    cmd="$cmd -r ${master}"
-  fi
-  
-  if [ -n "$mask" ]; then cmd="$cmd -m ${mask}"; fi
-  
+  cmd="$cmd -r ${master}"
   cmd="$cmd -w ${regdir}/${source}2${target}_warp${ext}"
   
-  if [ -n "$interp" ]; then cmd="$cmd --interp=${interp}"; fi
+  [ -n "$mask" ] && cmd="$cmd -m ${mask}"
+  [ -n "$interp" ] && cmd="$cmd --interp=${interp}"
   
   cmd="$cmd -o ${output}"
   
@@ -125,19 +123,12 @@ else # source/target are func or highres
   # $FSLDIR/bin/applywarp -i ${vepi} -r ${vrefhead} -o ${vout} --premat=${vout}.mat --interp=spline
   
   cmd="applywarp -i ${input}"
-  
-  if [ -z "$master" ]; then
-    cmd="$cmd -r ${regdir}/${target}${ext}"
-  else
-    cmd="$cmd -r ${master}"
-  fi
-  if [ -n "$mask" ]; then cmd="$cmd -m ${mask}"; fi
+  cmd="$cmd -r ${master}"
   cmd="$cmd --premat=${regdir}/${source}2${target}.mat"
   
-  if [ -n "$interp" ]; then cmd="$cmd --interp=${interp}"; fi
+  [ -n "$mask" ] && cmd="$cmd -m ${mask}"
+  [ -n "$interp" ] && cmd="$cmd --interp=${interp}"
   cmd="$cmd -o ${output}"
   
-  log_tcmd $cmd
+  log_tcmd "$cmd"
 fi
-
-

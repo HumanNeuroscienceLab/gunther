@@ -23,6 +23,7 @@ function check_outputs {
 }
 
 # we also load the path for python and R
+# TODO: set this somewhere else!!!
 python="/home/zshehzad/anaconda/bin/python"
 rscript="/usr/bin/Rscript"
 afnidir="$( dirname $( which afni ) )"

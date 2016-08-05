@@ -57,8 +57,9 @@ log_cmd "mkdir -p ${outdir} 2> /dev/null"
 
 #### Run Freesurfer ####
 
+log_time
 if [ ! -e "${freedir}/mri/aseg.mgz" -o ! -e "${freedir}/surf/lh.inflated" -o $overwrite == "true" ]; then
-  log_tcmd "recon-all -s ${subject} -sd ${sd} -no-isrunning -autorecon2 -openmp ${threads}"
+  log_cmd "recon-all -s ${subject} -sd ${sd} -no-isrunning -autorecon2 -openmp ${threads}"
 else
   log_echo "Freesurfer autorecon2 output already exists, skipping!"
 fi

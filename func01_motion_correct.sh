@@ -66,7 +66,7 @@ log_echo "RUNNING: $0 $@"
 source ${GUNTHERDIR}/include/io.sh
 
 check_inputs ${inputs[@]}
-check_outputs $overwrite "$outdir" "$workdir"
+check_outputs $overwrite "$workdir"
 [ ! -e $outdir ] && mkdir -p $outdir
 [ ! -e $workdir ] && mkdir -p $workdir
 

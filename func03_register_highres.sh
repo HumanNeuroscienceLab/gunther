@@ -44,10 +44,6 @@ _LOG_FILE=${cmdarg_cfg['log']}
 
 ext=".nii.gz"
 
-# check inputs
-[[ ! -z ${wmseg} ]] && [[ -z ${anathead} ]] && log_die "You must --anathead with --wmseg"
-[[ -z ${wmseg} ]] && [[ ! -z ${anathead} ]] && log_die "You must --wmseg with --anathead"
-
 # afni overwrite
 old_afni_deconflict=$AFNI_DECONFLICT
 if [ $overwrite == true ]; then
@@ -68,6 +64,10 @@ log_echo "RUNNING: $0 $@"
 #### Checks/Setup ####
 
 source ${GUNTHERDIR}/include/io.sh
+
+# check inputs
+[[ ! -z ${wmseg} ]] && [[ -z ${anathead} ]] && log_die "You must --anathead with --wmseg"
+[[ -z ${wmseg} ]] && [[ ! -z ${anathead} ]] && log_die "You must --wmseg with --anathead"
 
 check_inputs "$epi" "$anat" "$anathead"
 check_outputs $overwrite "$outdir"
@@ -111,6 +111,7 @@ else
 fi
 log_echo "Inverting affine matrix (highres -> func)"
 log_tcmd "convert_xfm -inverse -omat ${outdir}/highres2exfunc.mat ${outdir}/exfunc2highres.mat"
+log_tcmd "flirt -in ${outdir}/highres.nii.gz -ref ${outdir}/exfunc.nii.gz -out ${outdir}/highres2exfunc.nii.gz -applyxfm -init ${outdir}/highres2exfunc.mat"
 
 
 ###
@@ -140,7 +141,8 @@ fi
 ###
 log_echo "Correlating highres with exfunc2highres"
 
-log_cmd2 "cor_lin=`3ddot -docor -mask ${outdir}/highres${ext} ${outdir}/exfunc2highres${ext} ${outdir}/highres${ext}`"
+cor_lin=`3ddot -docor -mask ${outdir}/highres${ext} ${outdir}/exfunc2highres${ext} ${outdir}/highres${ext}`
+log_echo "cor_lin=${cor_lin}"
 
 log_echo "linear exfunc2highres vs highres: ${cor_lin}"
 log_echo "saving this to file: ${outdir}/quality_exfunc2highres.txt"

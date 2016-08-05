@@ -67,19 +67,23 @@ function log_echo() {
 
 # log_tcmd 'command' 'output-file for history (if given)'
 function log_tcmd {
-  log_echo "[$(date +'%b %e %R')]: $1"
+  log_echo "[$(date +'%b %e %R:%S')]: $1"
   log_exec "$1"
   ret=$?
   
   if [ ! -z "$2" ] && [ -e "$2" ] && [ $ret -eq 0 ]; then
-    log_exec "3dNotes -h '$1' $2"
+    log_exec "3dNotes -h '$1' $2" # Should I show this happening?
+  fi
+  
+  if [[ $ret -ne 0 ]]; then
+    log_die "Non-zero exit for: $1"
   fi
   
   return $ret
 }
 
 function log_tcmd2 {
-  log_echo "[$(date +'%b %e %R')]: $@"
+  log_echo "[$(date +'%b %e %R:%S')]: $@"
   log_exec2 "$@"
   ret="$?"
   return $ret
@@ -91,5 +95,5 @@ function log_die() {
 }
 
 function log_time() {
-  log_echo `date +'%b %e %R '`
+  log_echo `date +'%b %e %R:%S'`
 }

@@ -20,8 +20,8 @@ source ${GUNTHERDIR}/include/cmdarg.sh
 cmdarg_info "header" "Script for intensity normalization"
 cmdarg_info "author" "McCarthy Lab <some address>"
 ## required inputs
-cmdarg "i:" "inputs" "Path to functional runs to preprocess"
-cmdarg "o:" "outprefix" "Output prefix"
+cmdarg "i:" "input" "Path to functional runs to preprocess"
+cmdarg "o:" "output" "Output prefix"
 ## optional inputs
 cmdarg "f" "force" "Will overwrite any existing output" false
 cmdarg "l?" "log" "Log file"
@@ -32,15 +32,13 @@ cmdarg_parse "$@"
 
 #### Set Variables ####
 
-inputs=( ${cmdarg_cfg['inputs']} )
-outprefix=${cmdarg_cfg['outprefix']}
+input=( ${cmdarg_cfg['input']} )
+output=${cmdarg_cfg['output']}
 overwrite=${cmdarg_cfg['force']}
 _LOG_FILE=${cmdarg_cfg['log']}
 [ ! -z $_LOG_FILE ] && _LOG_FILE=$( readlink -f ${_LOG_FILE} ) # absolute path (if exists)
 
 ext=".nii.gz"
-outprefix=$( readlink -f ${outprefix} )
-outdir=$( dirname ${outprefix} )
 
 old_afni_deconflict=$AFNI_DECONFLICT
 if [ $overwrite == true ]; then
@@ -62,26 +60,16 @@ log_echo "RUNNING: $0 $@"
 
 source ${GUNTHERDIR}/include/io.sh
 
-check_inputs ${inputs[@]}
-
-[ ! -e $outdir ] && log_cmd "mkdir -p $outdir"
+check_inputs ${input}
+check_outputs ${output}
 
 # get full paths since changing paths
-outdir=$( readlink -f ${outdir} )
-for (( i = 0; i < ${#inputs[@]}; i++ )); do
-  inputs[$i]=$( readlink -f ${inputs[$i]} )
-done
+input=$( readlink -f ${input} )
+output=$( readlink -f ${output} )
 
 # recheck inputs
-check_inputs ${inputs[@]}
-
-# change directory?
-log_cmd2 "cd $outdir"
-
-
-# Runs
-nruns=${#inputs[@]}
-pruns=(`for x in $(seq 1 $nruns); do echo $x | awk '{printf "%02d ", $1}'; done`)
+check_inputs ${input}
+check_outputs ${output}
 
 
 #--- INTENSITY NORMALIZATION ---#
@@ -89,10 +77,8 @@ log_echo "===="
 log_echo "Intensity Normalization"
 
 log_echo "Mean 4D intensity normalization"
-for run in ${pruns[@]}; do
-  log_echo "...run ${run}"
-  log_cmd "fslmaths ${inputs[run]} -ing 10000 ${outprefix}_run${run}" "${outprefix}_run${run}${ext}"
-done
+log_tcmd "fslmaths ${input} -ing 10000 ${output}" "${output}"
+
 
 # Unset AFNI_DECONFLICT
 if [ $overwrite == true ]; then

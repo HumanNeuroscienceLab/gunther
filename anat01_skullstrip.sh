@@ -105,6 +105,6 @@ if [ ${plot} == true ]; then
   maskname=`${FSLDIR}/bin/remove_ext $(basename ${mask})`
   log_tcmd "slicer.py --crop -w 5 -l 4 -s axial ${head} ${outdir}/${headname}_axial.png"
   log_tcmd "slicer.py --crop -w 5 -l 4 -s sagittal ${head} ${outdir}/${headname}_sagittal.png"
-  log_tcmd "slicer.py --crop -w 5 -l 4 -s axial --overlay ${mask} 1 1 -t ${head} ${maskname}_axial.png"
-  log_tcmd "slicer.py --crop -w 5 -l 4 -s sagittal --overlay ${mask} 1 1 -t ${head} ${maskname}_sagittal.png"
+  log_tcmd "slicer.py --crop -w 5 -l 4 -s axial --overlay ${mask} 1 1 -t ${head} ${outdir}/${maskname}_axial.png"
+  log_tcmd "slicer.py --crop -w 5 -l 4 -s sagittal --overlay ${mask} 1 1 -t ${head} ${outdir}/${maskname}_sagittal.png"
 fi

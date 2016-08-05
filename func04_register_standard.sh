@@ -121,7 +121,26 @@ elif [ $method == "fsl" ]; then
   log_tcmd "applywarp --ref=standard --in=exfunc --out=exfunc2standard --warp=exfunc2standard_warp"
 elif [ $method == "ants" ]; then
   log_tcmd "antsApplyTransforms -d 3 -o exfunc2standard.nii.gz -t highres2standard_warp.nii.gz -t highres2standard.mat -t fsl2ants_exfunc2highres.txt -r standard${ext} -i exfunc${ext}"
-fi 
+fi
+
+
+#### LINK OVER CERTAIN REG FILES ####
+
+# nii
+# exfunc => example_func
+ext=".nii.gz"
+log_cmd "ln -sf exfunc${ext} example_func${ext}"
+
+# mat
+# exfunc2highres => example_func2highres
+# exfunc2standard => example_func2standard
+ext=".mat"
+log_cmd "ln -sf exfunc2highres${ext} example_func2highres${ext}"
+log_cmd "ln -sf exfunc2standard${ext} example_func2standard${ext}"
+
+# exfunc2standard_warp => example_func2standard_warp
+ext=".nii.gz"
+log_cmd "ln -sf exfunc2standard_warp${ext} example_func2standard_warp${ext}"
 
 
 ###
@@ -134,6 +153,7 @@ if [ $overwrite == true ]; then
 else
   sl_opts=""
 fi
+ext=".nii.gz"
 log_tcmd "$python ${GUNTHERDIR}/slicer.py${sl_opts} --auto -r standard${ext} exfunc2standard_linear${ext} exfunc2standard_linear.png"
 log_tcmd "$python ${GUNTHERDIR}/slicer.py${sl_opts} --auto -r standard${ext} exfunc2standard${ext} exfunc2standard.png"
 
@@ -144,8 +164,8 @@ log_tcmd "$python ${GUNTHERDIR}/slicer.py${sl_opts} --auto -r standard${ext} exf
 
 log_echo "Correlating highres with standard"
 
-log_cmd2 "cor_lin=`3ddot -docor -mask standard${ext} exfunc2standard_linear${ext} standard${ext}`"
-log_cmd2 "cor_nonlin=`3ddot -docor -mask standard${ext} exfunc2standard${ext} standard${ext}`"
+cor_lin=`3ddot -docor -mask standard${ext} exfunc2standard_linear${ext} standard${ext}`
+cor_nonlin=`3ddot -docor -mask standard${ext} exfunc2standard${ext} standard${ext}`
 
 log_echo "linear exfunc2standard vs standard: ${cor_lin}"
 log_echo "non-linear exfunc2standard vs standard: ${cor_nonlin}"
