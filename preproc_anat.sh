@@ -96,9 +96,9 @@ check_outputs ${anat[done]}
 if [[ ${#t2s[@]} -gt 1 ]]; then
   # register everything to the first scan
   t2dir="${anat[_dir]}/t2s"
-  log_tcmd "3dcopy ${t2s[0]} ${t2dir}/t2w_0.nii.gz"
-  for (( i = 1; i < ${#t2s[@]}; i++ )); do
-    log_tcmd "flirt -in ${t2s[i]} -ref ${t2dir}/t2w_0.nii.gz -out ${t2dir}/t2w_${i}.nii.gz -omat ${t2dir}/t2w_${i}.mat -dof 6"
+  log_tcmd "3dcopy ${t2s[1]} ${t2dir}/t2w_1.nii.gz"
+  for (( i = 2; i <= ${#t2s[@]}; i++ )); do
+    log_tcmd "flirt -in ${t2s[i]} -ref ${t2dir}/t2w_1.nii.gz -out ${t2dir}/t2w_${i}.nii.gz -omat ${t2dir}/t2w_${i}.mat -dof 6"
   done
   # average the resulting images and save that as the resulting t2 image
   log_tcmd "3dMean -prefix ${anat[t2_head]} ${t2dir}/t2w_*.nii.gz"
