@@ -93,7 +93,7 @@ check_outputs ${anat[done]}
 ## so i suppose could just do some motion correction
 
 ### process t2s
-if [[ ${#t2s[@]} -eq 1 ]]; then
+if [[ ${#t2s[@]} -gt 1 ]]; then
   # register everything to the first scan
   t2dir="${anat[_dir]}/t2s"
   log_tcmd "3dcopy ${t2s[0]} ${t2dir}/t2w_0.nii.gz"
@@ -102,7 +102,7 @@ if [[ ${#t2s[@]} -eq 1 ]]; then
   done
   # average the resulting images and save that as the resulting t2 image
   log_tcmd "3dMean -prefix ${anat[t2_head]} ${t2dir}/t2w_*.nii.gz"
-elif [[ ${#t2s[@]} -gt 1 ]]; then
+elif [[ ${#t2s[@]} -eq 1 ]]; then
   log_tcmd "3dcopy ${t2s[@]} ${anat[t2_head]}"
 fi
 
