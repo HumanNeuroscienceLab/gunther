@@ -97,12 +97,9 @@ if [[ ${#t2s[@]} -gt 1 ]]; then
   # register everything to the first scan
   t2dir="${anat[_dir]}/t2s"
   log_tcmd "mkdir ${t2dir} 2> /dev/null"
-  log_tcmd "3dcopy ${t2s[1]} ${t2dir}/t2w_1.nii.gz"
-  for (( i = 2; i <= ${#t2s[@]}; i++ )); do
-    log_tcmd "flirt -in ${t2s[i]} -ref ${t2dir}/t2w_1.nii.gz -out ${t2dir}/t2w_${i}.nii.gz -omat ${t2dir}/t2w_${i}.mat -dof 6"
-  done
-  # average the resulting images and save that as the resulting t2 image
-  log_tcmd "3dMean -prefix ${anat[t2_head]} ${t2dir}/t2w_*.nii.gz"
+  log_tcmd "3dMean -prefix ${t2dir}/t2w_init_average.nii.gz ${t2s[@]}"
+  log_tcmd "3dTcat -prefix ${t2dir}/t2s.nii.gz ${t2s[@]}"
+  log_tcmd "3dvolreg -verbose -zpad 4 -base ${t2dir}/t2w_init_average.nii.gz -maxdisp1D ${t2dir}/maxdisp.1D -1Dfile ${t2dir}/dfile.1D -1Dmatrix_save ${t2dir}/mat_vr_aff12.1D -prefix ${anat[t2_head]} -twopass -Fourier ${t2dir}/t2s.nii.gz"  
 elif [[ ${#t2s[@]} -eq 1 ]]; then
   log_tcmd "3dcopy ${t2s[@]} ${anat[t2_head]}"
 fi
