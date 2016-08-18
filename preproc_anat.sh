@@ -96,6 +96,7 @@ check_outputs ${anat[done]}
 if [[ ${#t2s[@]} -gt 1 ]]; then
   # register everything to the first scan
   t2dir="${anat[_dir]}/t2s"
+  log_tcmd "mkdir ${t2dir} 2> /dev/null"
   log_tcmd "3dcopy ${t2s[1]} ${t2dir}/t2w_1.nii.gz"
   for (( i = 2; i <= ${#t2s[@]}; i++ )); do
     log_tcmd "flirt -in ${t2s[i]} -ref ${t2dir}/t2w_1.nii.gz -out ${t2dir}/t2w_${i}.nii.gz -omat ${t2dir}/t2w_${i}.mat -dof 6"
