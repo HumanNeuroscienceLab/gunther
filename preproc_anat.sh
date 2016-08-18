@@ -97,9 +97,8 @@ if [[ ${#t2s[@]} -gt 1 ]]; then
   # register everything to the first scan
   t2dir="${anat[_dir]}/t2s"
   log_tcmd "mkdir ${t2dir} 2> /dev/null"
-  log_tcmd "3dMean -prefix ${t2dir}/t2w_init_average.nii.gz ${t2s[@]}"
-  log_tcmd "3dTcat -prefix ${t2dir}/t2s.nii.gz ${t2s[@]}"
-  log_tcmd "3dvolreg -verbose -zpad 4 -base ${t2dir}/t2w_init_average.nii.gz -maxdisp1D ${t2dir}/maxdisp.1D -1Dfile ${t2dir}/dfile.1D -1Dmatrix_save ${t2dir}/mat_vr_aff12.1D -prefix ${anat[t2_head]} -twopass -Fourier ${t2dir}/t2s.nii.gz"  
+  log_tcmd "3dTcat -prefix ${t2dir}/t2s.nii.gz ${t2s[*]}"
+  log_tcmd "3dvolreg -verbose -zpad 4 -base 0 -maxdisp1D ${t2dir}/maxdisp.1D -1Dfile ${t2dir}/dfile.1D -1Dmatrix_save ${t2dir}/mat_vr_aff12.1D -prefix ${anat[t2_head]} -twopass -Fourier ${t2dir}/t2s.nii.gz"  
 elif [[ ${#t2s[@]} -eq 1 ]]; then
   log_tcmd "3dcopy ${t2s[@]} ${anat[t2_head]}"
 fi
@@ -107,7 +106,7 @@ fi
 ### skull-strip
 log_echo "=== Skullstrip"
 log_cmd "mkdir ${anat[skullstrip]}"
-input=$( join " -i " "${inputs[@]}" )
+input=$( join " -i " "${inputs[*]}" )
 log_tcmd "bash anat01_skullstrip.sh -p -r ${nthreads} -i ${input} -s ${subject} --sd ${sddir} -o ${anat[skullstrip]}"
 
 ## copy over the head to folder
