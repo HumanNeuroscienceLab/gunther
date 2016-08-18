@@ -16,6 +16,9 @@ export GUNTHERDIR=/mnt/nfs/share/scripts/gunther # HACK
 
 #### Usage ####
 
+declare -a inputs
+declare -a t2s
+
 source ${GUNTHERDIR}/include/cmdarg.sh
 
 cmdarg_info "header" "Script for preprocessing anatomical image"
@@ -25,21 +28,26 @@ cmdarg "s:" "subject" "Freesurfer subject id"
 cmdarg "d:" "studydir" "Study directory"
 ## optional inputs
 cmdarg "c:" "threads" "Number of OpenMP threads to use with FreeSurfer" 1
-cmdarg "i:" "input" "Path to high-resolution T1 anatomical"
-cmdarg "t?" "t2" "Path to high-resolution T2 anatomical"
+cmdarg 'i?[]' 'inputs' 'Input high-resolution T1 anatomicals. Can have multiple anatomical files such as -i anat1.nii.gz -i anat2.nii.gz'
+cmdarg 't?[]' 't2s' 'Path to high-resolution T2 anatomicals. Can have multiple anatomical files such as -i anat1.nii.gz -i anat2.nii.gz'
+
 
 ## parse
 cmdarg_parse "$@"
 [ $# == 0 ] && exit
 # TODO: get cmdarg to exit early when bad inputs
 
+## for joining together array
+## from: http://stackoverflow.com/questions/1527049/bash-join-elements-of-an-array
+function join { local d=$1; shift; echo -n "$1"; shift; printf "%s" "${@/#/$d}"; }
+
 
 #### Set User Variables ####
 
 subject=${cmdarg_cfg['subject']}
 studydir=${cmdarg_cfg['studydir']}
-input=${cmdarg_cfg['input']}
-t2=${cmdarg_cfg['t2']}
+#input=${cmdarg_cfg['input']}
+#t2=${cmdarg_cfg['t2']}
 nthreads=${cmdarg_cfg['threads']}
 
 
@@ -69,8 +77,8 @@ log_echo "RUNNING: $0 $@"
 
 source ${GUNTHERDIR}/include/io.sh
 
-check_inputs ${input}
-[ ! -z ${t2} ] && check_inputs ${t2}
+check_inputs ${inputs[@]}
+[ ! -z ${#t2s[@]} ] && check_inputs ${t2s[@]}
 
 check_outputs ${anat[done]}
 # if overwrite, then remove the skullstrip, reg, segment, and atlases, etc folders
@@ -80,14 +88,19 @@ check_outputs ${anat[done]}
 # Commands
 ###
 
-### input file
-log_echo "=== Copy over main file"
-log_tcmd "3dcopy ${input} ${anat[head]}"
+## what to do with more than one output?
+## for t2s, we should average them together but to do that we first need to register them to each other and than average
+## so i suppose could just do some motion correction
 
 ### skull-strip
 log_echo "=== Skullstrip"
 log_cmd "mkdir ${anat[skullstrip]}"
-log_tcmd "bash anat01_skullstrip.sh -p -r ${nthreads} -i ${anat[head]} -s ${subject} --sd ${sddir} -o ${anat[skullstrip]}"
+input=$( join " -i " "${inputs[@]}" )
+log_tcmd "bash anat01_skullstrip.sh -p -r ${nthreads} -i ${input} -s ${subject} --sd ${sddir} -o ${anat[skullstrip]}"
+
+## copy over the head to folder
+log_echo "=== Copy over main file"
+log_tcmd "mri_convert ${sddir}/${subject}/mri/rawavg.mgz ${anat[head]}"
 
 ### register to standard
 log_echo "=== Register to Standard Space"
@@ -99,10 +112,22 @@ log_tcmd "bash anat03_segment_freesurfer.sh -s ${subject} --sd ${sddir} -r ${nth
 
 ### atlases
 log_echo "=== Atlases"
-if [[ -z ${t2} ]]; then
+if [[ -z ${#t2s[@]} ]]; then
   log_tcmd "bash anat04_parcellate_freesurfer.sh -s ${subject} --sd ${sddir} -r ${nthreads} -o ${anat[atlases]}"
 else
-  log_tcmd "bash anat04_parcellate_freesurfer.sh -s ${subject} --sd ${sddir} --t2 ${t2} -r ${nthreads} -o ${anat[atlases]}"
+  if [[ ${#t2s[@]} -gt 1 ]]; then
+    # register everything to the first scan
+    t2dir="${anat[_dir]}/t2s"
+    log_tcmd "3dcopy ${t2s[0]} ${t2dir}/t2w_0.nii.gz"
+    for (( i = 1; i < ${#t2s[@]}; i++ )); do
+      log_tcmd "flirt -in ${t2s[i]} -ref ${t2dir}/t2w_0.nii.gz -out ${t2dir}/t2w_${i}.nii.gz -omat ${t2dir}/t2w_${i}.mat -dof 6"
+    done
+    # average the resulting images and save that as the resulting t2 image
+    log_tcmd "3dMean -prefix ${anat[t2_head]} ${t2dir}/t2w_*.nii.gz"
+  else
+    log_tcmd "3dcopy ${t2s[@]} ${anat[t2_head]}"
+  fi
+  log_tcmd "bash anat04_parcellate_freesurfer.sh -s ${subject} --sd ${sddir} --t2 ${anat[t2_head]} -r ${nthreads} -o ${anat[atlases]}"
 fi
 
 ### done

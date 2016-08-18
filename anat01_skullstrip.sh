@@ -18,12 +18,14 @@
 
 #### Usage ####
 
+declare -a inputs
+
 source ${GUNTHERDIR}/include/cmdarg.sh
 
 cmdarg_info "header" "Script for skull stripping"
 cmdarg_info "author" "McCarthy Lab <some address>"
 ## required inputs
-cmdarg "i:" "input" "Input head file (not skull-stripped)"
+cmdarg 'i?[]' 'inputs' "Input head file (not skull-stripped). Can use multiple -i for multiple inputs."
 cmdarg "s:" "subject" "Freesurfer subject id"
 cmdarg "o:" "outdir" "Output directory"
 ## optional inputs
@@ -37,9 +39,14 @@ cmdarg_parse "$@"
 [ $# == 0 ] && exit
 # TODO: get cmdarg to exit early when bad inputs
 
+## for joining together array
+## from: http://stackoverflow.com/questions/1527049/bash-join-elements-of-an-array
+function join { local d=$1; shift; echo -n "$1"; shift; printf "%s" "${@/#/$d}"; }
+
+
 #### Set Variables ####
 
-head=${cmdarg_cfg['input']}
+#head=${cmdarg_cfg['input']}
 subject=${cmdarg_cfg['subject']}
 outdir=${cmdarg_cfg['outdir']}
 sd=${cmdarg_cfg['sd']}
@@ -73,7 +80,7 @@ log_echo "RUNNING: $0 $@"
 
 source ${GUNTHERDIR}/include/io.sh
 
-check_inputs "$head"
+check_inputs ${inputs[@]}
 check_outputs $overwrite "$brain" "$mask" "$bias"
 
 # Create the main freesurfer directory with all the subjects in it if not exist
@@ -90,21 +97,29 @@ mkdir ${outdir} 2> /dev/null
 #### Run ####
 
 # Run freesurfer - step 1
-log_tcmd "recon-all -i ${head} -s ${subject} -sd ${sd} -autorecon1 -openmp ${threads}"
+head=$( join " -i " "${inputs[@]}" )
+log_cmd "recon-all -i ${head} -s ${subject} -sd ${sd} -autorecon1 -openmp ${threads}"
+
+# Copy over head
+tmphead=$(mktemp --suffix .nii.gz); rm ${tmphead}
+log_cmd "mri_convert ${sd}/${subject}/mri/rawavg.mgz ${tmphead}"
 
 # Convert the freesurfer space brain into native space
 log_tcmd "mri_convert -rl ${sd}/${subject}/mri/rawavg.mgz -rt nearest ${sd}/${subject}/mri/brainmask.mgz ${bias}"
 log_tcmd "3dcalc -a ${bias} -expr 'step(a)' -prefix ${mask}"
-log_tcmd "3dcalc -a ${head} -b ${mask} -expr 'a*b' -prefix ${brain}"
+log_tcmd "3dcalc -a ${tmphead} -b ${mask} -expr 'a*b' -prefix ${brain}"
 
 
 #### Plot ####
 
 if [ ${plot} == true ]; then
-  headname=`${FSLDIR}/bin/remove_ext $(basename ${head})`
+  headname="head" #`${FSLDIR}/bin/remove_ext $(basename ${tmphead})`
   maskname=`${FSLDIR}/bin/remove_ext $(basename ${mask})`
-  log_tcmd "slicer.py --crop -w 5 -l 4 -s axial ${head} ${outdir}/${headname}_axial.png"
-  log_tcmd "slicer.py --crop -w 5 -l 4 -s sagittal ${head} ${outdir}/${headname}_sagittal.png"
-  log_tcmd "slicer.py --crop -w 5 -l 4 -s axial --overlay ${mask} 1 1 -t ${head} ${outdir}/${maskname}_axial.png"
-  log_tcmd "slicer.py --crop -w 5 -l 4 -s sagittal --overlay ${mask} 1 1 -t ${head} ${outdir}/${maskname}_sagittal.png"
+  log_tcmd "slicer.py --crop -w 5 -l 4 -s axial ${tmphead} ${outdir}/${headname}_axial.png"
+  log_tcmd "slicer.py --crop -w 5 -l 4 -s sagittal ${tmphead} ${outdir}/${headname}_sagittal.png"
+  log_tcmd "slicer.py --crop -w 5 -l 4 -s axial --overlay ${mask} 1 1 -t ${tmphead} ${outdir}/${maskname}_axial.png"
+  log_tcmd "slicer.py --crop -w 5 -l 4 -s sagittal --overlay ${mask} 1 1 -t ${tmphead} ${outdir}/${maskname}_sagittal.png"
 fi
+
+# remove tmphead
+log_tcmd "rm ${tmphead}"

@@ -12,6 +12,7 @@ anat['_dir']="${anatdir}"
 anat['log']="${anatdir}/log_anat_preproc_$(date +'%Y-%m-%d')_time-$(date +'%H-%M-%S').txt"
 ## input
 anat['head']="${anatdir}/head.nii.gz"
+anat['t2_head']="${anatdir}/t2_head.nii.gz"
 ## skull-strip script
 anat['skullstrip']="${anatdir}/skullstrip"
 anat['skullstrip_prefix']="${anatdir}/skullstrip/brain"
