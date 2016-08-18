@@ -92,6 +92,20 @@ check_outputs ${anat[done]}
 ## for t2s, we should average them together but to do that we first need to register them to each other and than average
 ## so i suppose could just do some motion correction
 
+### process t2s
+if [[ ${#t2s[@]} -eq 1 ]]; then
+  # register everything to the first scan
+  t2dir="${anat[_dir]}/t2s"
+  log_tcmd "3dcopy ${t2s[0]} ${t2dir}/t2w_0.nii.gz"
+  for (( i = 1; i < ${#t2s[@]}; i++ )); do
+    log_tcmd "flirt -in ${t2s[i]} -ref ${t2dir}/t2w_0.nii.gz -out ${t2dir}/t2w_${i}.nii.gz -omat ${t2dir}/t2w_${i}.mat -dof 6"
+  done
+  # average the resulting images and save that as the resulting t2 image
+  log_tcmd "3dMean -prefix ${anat[t2_head]} ${t2dir}/t2w_*.nii.gz"
+elif [[ ${#t2s[@]} -gt 1 ]]; then
+  log_tcmd "3dcopy ${t2s[@]} ${anat[t2_head]}"
+fi
+
 ### skull-strip
 log_echo "=== Skullstrip"
 log_cmd "mkdir ${anat[skullstrip]}"
@@ -115,18 +129,6 @@ log_echo "=== Atlases"
 if [[ -z ${#t2s[@]} ]]; then
   log_tcmd "bash anat04_parcellate_freesurfer.sh -s ${subject} --sd ${sddir} -r ${nthreads} -o ${anat[atlases]}"
 else
-  if [[ ${#t2s[@]} -gt 1 ]]; then
-    # register everything to the first scan
-    t2dir="${anat[_dir]}/t2s"
-    log_tcmd "3dcopy ${t2s[0]} ${t2dir}/t2w_0.nii.gz"
-    for (( i = 1; i < ${#t2s[@]}; i++ )); do
-      log_tcmd "flirt -in ${t2s[i]} -ref ${t2dir}/t2w_0.nii.gz -out ${t2dir}/t2w_${i}.nii.gz -omat ${t2dir}/t2w_${i}.mat -dof 6"
-    done
-    # average the resulting images and save that as the resulting t2 image
-    log_tcmd "3dMean -prefix ${anat[t2_head]} ${t2dir}/t2w_*.nii.gz"
-  else
-    log_tcmd "3dcopy ${t2s[@]} ${anat[t2_head]}"
-  fi
   log_tcmd "bash anat04_parcellate_freesurfer.sh -s ${subject} --sd ${sddir} --t2 ${anat[t2_head]} -r ${nthreads} -o ${anat[atlases]}"
 fi
 
