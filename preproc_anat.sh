@@ -106,7 +106,7 @@ fi
 ### skull-strip
 log_echo "=== Skullstrip"
 log_cmd "mkdir ${anat[skullstrip]}"
-input=$( join " -i " "${inputs[*]}" )
+input=$( join " -i " ${inputs[*]} )
 log_tcmd "bash anat01_skullstrip.sh -p -r ${nthreads} -i ${input} -s ${subject} --sd ${sddir} -o ${anat[skullstrip]}"
 
 ## copy over the head to folder

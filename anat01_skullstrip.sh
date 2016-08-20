@@ -98,7 +98,7 @@ mkdir ${outdir} 2> /dev/null
 
 # Run freesurfer - step 1
 ## TODO: check for the output...only run if output doesn't exist?
-head=$( join " -i " "${inputs[@]}" )
+head=$( join " -i " ${inputs[*]} )
 log_cmd "recon-all -i ${head} -s ${subject} -sd ${sd} -autorecon1 -openmp ${threads}"
 
 # Copy over head
