@@ -22,6 +22,8 @@ cmdarg "i:" "inputs" "Path to functional runs to motion correct"
 cmdarg "o:" "outprefix" "Output prefix"
 cmdarg "w:" "workdir" "Path to working directory"
 ## optional inputs
+cmdarg "m:" "meanfunc" "Path to mean functional. If provided, each scan will be motion corrected to this image skipping any internal generation of a mean functional image" ""
+cmdarg "j:" "njobs" "Number of parallel jobs" 1
 cmdarg "k" "keepwdir" "Keep working directory" false
 cmdarg "f" "force" "Will overwrite any existing output" false
 cmdarg "l?" "log" "Log file"
@@ -34,6 +36,8 @@ cmdarg_parse "$@"
 inputs=( ${cmdarg_cfg['inputs']} )
 outprefix=${cmdarg_cfg['outprefix']}
 workdir=${cmdarg_cfg['workdir']}
+meanfunc=${cmdarg_cfg['meanfunc']}
+njobs=${cmdarg_cfg['njobs']}
 keepwdir=${cmdarg_cfg['keepwdir']}
 overwrite=${cmdarg_cfg['force']}
 _LOG_FILE=${cmdarg_cfg['log']}
@@ -43,7 +47,6 @@ ext=".nii.gz"
 
 nruns=${#inputs[@]}
 outdir=$(dirname $outprefix)
-echo "$nruns runs"
 
 old_afni_deconflict=$AFNI_DECONFLICT
 if [ $overwrite == true ]; then
@@ -59,6 +62,8 @@ check_logfile
 
 log_echo ""
 log_echo "RUNNING: $0 $@"
+log_echo "- nruns: $nruns"
+log_echo "- njobs: $njobs"
 
 
 #### Checks/Setup ####
@@ -66,6 +71,7 @@ log_echo "RUNNING: $0 $@"
 source ${GUNTHERDIR}/include/io.sh
 
 check_inputs ${inputs[@]}
+[ ! -z ${meanfunc} ] && check_inputs ${meanfunc}
 check_outputs $overwrite "$workdir"
 [ ! -e $outdir ] && mkdir -p $outdir
 [ ! -e $workdir ] && mkdir -p $workdir
@@ -73,56 +79,34 @@ check_outputs $overwrite "$workdir"
 # get full paths since changing paths
 workdir=$( readlink -f ${workdir} )
 outdir=$( readlink -f ${outdir} )
+if [ ! -z ${meanfunc} ]; then
+  meanfunc=$( readlink -f ${meanfunc} )
+fi
 for (( i = 0; i < ${#inputs[@]}; i++ )); do
   inputs[$i]=$( readlink -f ${inputs[$i]} )
 done
 
 # recheck inputs
 check_inputs ${inputs[@]}
+[ ! -z ${meanfunc} ] && check_inputs ${meanfunc}
 
 # Work in the working directory
 log_cmd2 "cd $workdir"
 
 
 ###
-# First Pass
+# First and Second Pass
 ###
 
-log_echo "=== First Pass" 
-
-for i in `seq 1 $nruns`; do
-  ri=`echo $i | awk '{printf "%02d", $1}'`
-  input=${inputs[i-1]}
-  log_echo "Generate motion-corrected mean EPI for run ${ri}"
-  # Mean EPI of non-motion-corrected data
-  log_tcmd "3dTstat -mean -prefix iter0_mean_epi_r${ri}${ext} ${input}"
-  # Apply motion correction to mean EPI
-  log_tcmd "3dvolreg -verbose -zpad 4 -base iter0_mean_epi_r${ri}${ext} -prefix iter0_epi_volreg_r${ri}${ext} -cubic ${input}"
-  # New mean EPI of motion-corrected data
-  log_tcmd "3dTstat -mean -prefix iter1_mean_epi_r${ri}${ext} iter0_epi_volreg_r${ri}${ext}"
-done
-
-# Combine mean EPIs from each run
-log_echo "Combine mean EPIs from each run"
-log_tcmd "3dTcat -prefix iter1_mean_epis${ext} iter1_mean_epi_r*${ext}"
-
-# Get mean EPI across runs
-log_echo "Get mean EPI across runs"
-log_tcmd "3dTstat -mean -prefix iter1_mean_mean_epi${ext} iter1_mean_epis${ext}"
-
-
-###
-# Second Pass
-##
-
-log_echo "=== Second Pass"
-# Register mean EPIs from each run to each other
-log_echo "Motion correct the mean EPIs"
-log_tcmd "3dvolreg -verbose -zpad 4 -base iter1_mean_mean_epi${ext} -prefix iter2_mean_epis_volreg${ext} -cubic iter1_mean_epis${ext}"
-
-# Take the mean of motion-corrected mean EPIs
-log_echo "Get mean EPI across the mean EPIs"
-log_tcmd "3dTstat -mean -prefix iter2_mean_mean_epi${ext} iter2_mean_epis_volreg${ext}"
+if [[ -z "${meanfunc}" ]]; then
+  meanfunc="${workdir}/init_mean_functional${ext}"
+  
+  log_echo "=== First and Second Passes"
+  # We will call another script to get the mean of the functionals
+  log_tcmd "func_mean_functionals.sh -i '${inputs[*]}' -w ${workdir}/meaner -o ${meanfunc} -j ${njobs}"  
+else
+  log_echo "=== Skipping First and Second Passes using provided meanfunc instead"
+fi
 
 
 ###
@@ -131,15 +115,28 @@ log_tcmd "3dTstat -mean -prefix iter2_mean_mean_epi${ext} iter2_mean_epis_volreg
 
 log_echo "=== Third and Final Pass"
 
+# Get the range of scan numbers with padding of 2
+ris=()
 for i in `seq 1 $nruns`; do
   ri=`echo $i | awk '{printf "%02d", $1}'`
-  input=${inputs[i-1]}
-  log_echo "Motion correct run ${ri}"
-  # Apply motion correction to prior mean EPI
-  log_tcmd "3dvolreg -verbose -zpad 4 -base iter2_mean_mean_epi${ext} -maxdisp1D iter3_maxdisp_r${ri}.1D -1Dfile iter3_dfile_r${ri}.1D -1Dmatrix_save iter3_mat_r${ri}_vr_aff12.1D -prefix iter3_epi_volreg_r${ri}${ext} -twopass -Fourier ${input}"
-  # New mean EPI of motion-corrected data
-  log_tcmd "3dTstat -mean -prefix iter3_mean_epi_r${ri}${ext} iter3_epi_volreg_r${ri}${ext}"
+  ris+=($ri)
 done
+
+log_echo "...apply motion correction to prior mean EPI"
+log_tcmd "parallel --xapply --no-notice -j $njobs --eta 3dvolreg -verbose -zpad 4 -base ${meanfunc} -maxdisp1D iter3_maxdisp_r{1}.1D -1Dfile iter3_dfile_r{1}.1D -1Dmatrix_save iter3_mat_r{1}_vr_aff12.1D -prefix iter3_epi_volreg_r{1}${ext} -twopass -Fourier {2} ::: ${ris[*]} ::: ${inputs[*]}"
+
+log_echo "...new mean EPI of motion-corrected data"
+log_tcmd "parallel --xapply --no-notice -j $njobs --eta 3dTstat -mean -prefix iter3_mean_epi_r{1}${ext} iter3_epi_volreg_r{1}${ext} ::: ${ris[*]}"
+
+#for i in `seq 1 $nruns`; do
+#  ri=`echo $i | awk '{printf "%02d", $1}'`
+#  input=${inputs[i-1]}
+#  log_echo "Motion correct run ${ri}"
+#  # Apply motion correction to prior mean EPI
+#  log_tcmd "3dvolreg -verbose -zpad 4 -base init_mean_functional${ext} -maxdisp1D iter3_maxdisp_r${ri}.1D -1Dfile iter3_dfile_r${ri}.1D -1Dmatrix_save iter3_mat_r${ri}_vr_aff12.1D -prefix iter3_epi_volreg_r${ri}${ext} -twopass -Fourier ${input}"
+#  # New mean EPI of motion-corrected data
+#  log_tcmd "3dTstat -mean -prefix iter3_mean_epi_r${ri}${ext} iter3_epi_volreg_r${ri}${ext}"
+#done
 
 # Combine mean EPIs from each run
 log_echo "Combine mean EPIs"
@@ -248,14 +245,15 @@ for i in `seq 1 $nruns`; do
 done
 
 log_echo "compute de-meaned motion parameters (for use in regression)"
-log_tcmd "${python} ${afnidir}/1d_tool.py -infile ${outprefix}_runall_dfile.1D -set_run_lengths ${srunlengths} -demean -write ${outprefix}_motion_demean.1D"
+log_tcmd "${python} ${afnidir}/1d_tool.py -infile ${outprefix}_runall_dfile.1D -set_run_lengths ${srunlengths[*]} -demean -write ${outprefix}_motion_demean.1D"
 
 log_echo "compute motion parameter derivatives (just to have)"
-log_tcmd "${python} ${afnidir}/1d_tool.py -infile ${outprefix}_runall_dfile.1D -set_run_lengths ${srunlengths} -derivative -demean -write ${outprefix}_motion_deriv_demean.1D"
+log_tcmd "${python} ${afnidir}/1d_tool.py -infile ${outprefix}_runall_dfile.1D -set_run_lengths ${srunlengths[*]} -derivative -demean -write ${outprefix}_motion_deriv_demean.1D"
 
 log_echo "create file for censoring motion"
-log_tcmd "${python} ${afnidir}/1d_tool.py -infile ${outprefix}_runall_dfile.1D -set_run_lengths ${srunlengths} -show_censor_count -censor_prev_TR -censor_motion 1.25 ${outprefix}_motion" 
-# TODO: have the amount of motion be a user argument
+log_tcmd "${python} ${afnidir}/1d_tool.py -infile ${outprefix}_runall_dfile.1D -set_run_lengths ${srunlengths[*]} -show_censor_count -censor_prev_TR -censor_motion 1.25 ${outprefix}_motion" 
+
+# TODO: demean each run separately as well?
 
 
 ###

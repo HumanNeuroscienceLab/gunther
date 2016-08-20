@@ -19,6 +19,9 @@ cmdarg "d:" "studydir" "Study directory"
 cmdarg 'i?[]' 'inputs' 'Input functional files as -i name=path. Can have multiple functionals with the same name.'
 cmdarg "p?{}" "params" "Set paramaters: fwhm, high_pass, and/or low_pass"
 ## optional inputs
+cmdarg "m:" "meanfunc" "Path to mean functional. If provided, each scan will be motion corrected to this image skipping any internal generation of a mean functional image" ""
+cmdarg "r" "reg" "Do the registration as well" false
+cmdarg "j:" "njobs" "Number of parallel jobs" 1
 cmdarg "f" "force" "Will overwrite any existing output" false
 ## parse
 cmdarg_parse "$@"
@@ -58,6 +61,9 @@ echo
 subject=( ${cmdarg_cfg['subject']} )
 studydir=${cmdarg_cfg['studydir']}
 overwrite=${cmdarg_cfg['force']}
+njobs=${cmdarg_cfg['njobs']}
+meanfunc=${cmdarg_cfg['meanfunc']}
+reg=${cmdarg_cfg['reg']}
 
 ext=".nii.gz"
 workprefix="prefunc"
@@ -88,13 +94,19 @@ log_echo "RUNNING: $0 $@"
 
 source ${GUNTHERDIR}/include/io.sh
 
+check_inputs ${list_inputs[@]}
+
 
 #### Analysis ####
 
 log_cmd "mkdir ${func[_dir]} 2> /dev/null"
 
 log_echo "=== Motion Correct"
-log_tcmd "bash func01_motion_correct.sh -i '${list_inputs[@]}' -o '${func[mc_prefix]}' -w '${func[mc_work]}' -k"
+if [[ -z ${meanfunc} ]]; then
+  log_tcmd "bash func01_motion_correct.sh -i '${list_inputs[@]}' -o '${func[mc_prefix]}' -w '${func[mc_work]}' -k -j ${njobs}"
+else
+  log_tcmd "bash func01_motion_correct.sh -i '${list_inputs[@]}' -o '${func[mc_prefix]}' -w '${func[mc_work]}' -k -m '${meanfunc}' -j ${njobs}"
+fi
 
 log_echo "=== Skull Strip"
 mc_inputs=( $( ls ${func[mc_prefix]}_run*_volreg.nii.gz ) )
@@ -103,13 +115,6 @@ log_echo "Soft link the mean and example functionals"
 log_tcmd "ln -sf '${func[skullstrip_meanfunc]}' '${func[meanfunc]}'" "${func[meanfunc]}"
 log_tcmd "ln -sf '${func[skullstrip_mask]}' '${func[mask]}'" "${func[mask]}"
 log_tcmd "ln -sf '${func[skullstrip_meanfunc]}' '${func[exfunc]}'"
-
-log_echo "=== Registration"
-log_echo "Temp hack for getting white matter from freesurfer segmentation"
-log_tcmd "3dcalc -a ${anat[segment]}/aseg/left_cerebral_white_matter.nii.gz -b ${anat[segment]}/aseg/right_cerebral_white_matter.nii.gz -expr 'step(a+b)' -prefix ${anat[segment_wm]}" "${anat[segment_wm]}"
-log_tcmd "bash func03_register_highres.sh -i '${func[meanfunc]}' -a '${anat[skullstrip_brain]}' -s '${anat[segment_wm]}' --anathead '${anat[head]}' -o '${func[reg]}'"
-log_tcmd "bash func04_register_standard.sh --epireg ${func[reg]} --anatreg ${anat[reg]}"
-
 
 log_echo "=== Threshold for Smoothing"
 median_vals=()
@@ -122,6 +127,17 @@ log_echo "... median_val = ${median_val}"
 log_echo "... brightness_thr = ${brightness_thr}"
 
 log_echo "=== Go through each functional scan for remaining preprocessing"
+
+# Get the number of runs per scan in loop below
+uniq_names=( $( echo "${list_names[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' ' ) )
+declare -A ninputs_per_name
+
+# Save the scan number to directory in textfile
+echo "name inindex infile outindex outfile" > ${func[_dir]}/df_paths.txt
+
+# Soft-links and saves
+list_pad_nruns=()
+list_scandirs=()
 for (( i = 0; i < ${#list_names[@]}; i++ )); do
   name=${list_names[i]}
   infile=${list_inputs[i]}
@@ -129,26 +145,55 @@ for (( i = 0; i < ${#list_names[@]}; i++ )); do
   log_echo "=== Scan: ${name}"
   scandir="${func[_dir]}/${name}" # maybe have some function that sets all the variables
   log_cmd "mkdir ${scandir} 2> /dev/null"
-  
+    
   log_echo "== Soft link the relevant functional files"
   log_tcmd "ln -sf ${func[mask]} ${scandir}/mask.nii.gz" "${scandir}/mask.nii.gz"
   log_tcmd "ln -sf ${func[meanfunc]} ${scandir}/mean_func.nii.gz" "${scandir}/mean_func.nii.gz"
   log_tcmd "ln -sf ${func[reg]} ${scandir}/reg"
+  
+  # Get the number of functionals for this scan
+  ninputs_per_name[$name]=$(( ${ninputs_per_name[$name]} + 1 ))
+  nruns=${ninputs_per_name[$name]}
+  
   # See how many functionals in the output folder to track the current run number
-  nruns=$( ls ${scandir}/filtered_func_run*.nii.gz | wc -l )
-  nruns=$(( $nruns + 1 ))
   pad_nruns=$( echo $nruns | awk '{printf "%02d", $1}' )
+  
+  # Soft link the functional in skullstrip folder into here
   pad_i=$(( $i + 1 ))
   pad_i=$( echo ${pad_i} | awk '{printf "%02d", $1}' )
   log_tcmd "ln -sf ${func[skullstrip_prefix]}_run${pad_i}.nii.gz ${scandir}/prefiltered_func_run${pad_nruns}.nii.gz" "${scandir}/prefiltered_func_run${pad_nruns}.nii.gz"
   
-  log_echo "== Smooth"
-  log_tcmd "bash func05_smooth.sh -i ${scandir}/prefiltered_func_run${pad_nruns}.nii.gz --fwhm ${params[fwhm]} -o ${scandir}/prefiltered_func_smooth_run${pad_nruns}.nii.gz --mask ${func[mask]} --meanfunc ${func[meanfunc]} --brightness ${brightness_thr}"
+  # Save paths
+  echo "${name} ${pad_i} ${infile} ${pad_nruns} ${scandir}/filtered_func_run${pad_nruns}.nii.gz" >> ${func[_dir]}/df_paths.txt
   
-  log_echo "== Intensity Normaization"
-  log_tcmd "bash func06_inorm.sh -i ${scandir}/prefiltered_func_smooth_run${pad_nruns}.nii.gz -o ${scandir}/prefiltered_func_smooth_inorm_run${pad_nruns}.nii.gz"
+  # Save variables
+  list_pad_nruns+=(${pad_nruns})
+  list_scandirs+=(${scandir})
   
-  log_echo "== Band-Pass Filter"
-  log_tcmd "bash func07_filter.sh --lp ${params[low_pass]} --hp ${params[high_pass]} -i ${scandir}/prefiltered_func_smooth_inorm_run${pad_nruns}.nii.gz -o ${scandir}/filtered_func_run${pad_nruns}.nii.gz"  
-  
+  #log_echo "== Smooth"
+  #log_tcmd "bash func05_smooth.sh -i ${scandir}/prefiltered_func_run${pad_nruns}.nii.gz --fwhm ${params[fwhm]} -o ${scandir}/prefiltered_func_smooth_run${pad_nruns}.nii.gz --mask ${func[mask]} --meanfunc ${func[meanfunc]} --brightness ${brightness_thr}"
+  #
+  #log_echo "== Intensity Normaization"
+  #log_tcmd "bash func06_inorm.sh -i ${scandir}/prefiltered_func_smooth_run${pad_nruns}.nii.gz -o ${scandir}/prefiltered_func_smooth_inorm_run${pad_nruns}.nii.gz"
+  #
+  #log_echo "== Band-Pass Filter"
+  #log_tcmd "bash func07_filter.sh --lp ${params[low_pass]} --hp ${params[high_pass]} -i ${scandir}/prefiltered_func_smooth_inorm_run${pad_nruns}.nii.gz -o ${scandir}/filtered_func_run${pad_nruns}.nii.gz"  
 done
+
+log_echo "== Smooth"
+log_tcmd "parallel --xapply --no-notice -j $njobs --eta func05_smooth.sh -i {1}/prefiltered_func_run{2}.nii.gz --fwhm ${params[fwhm]} -o {1}/prefiltered_func_smooth_run{2}.nii.gz --mask ${func[mask]} --meanfunc ${func[meanfunc]} --brightness ${brightness_thr} ::: ${list_scandirs[*]} ::: ${list_pad_nruns[*]}"
+
+log_echo "== Intensity Normaization"
+log_tcmd "parallel --xapply --no-notice -j $njobs --eta func06_inorm.sh -i {1}/prefiltered_func_smooth_run{2}.nii.gz -o {1}/prefiltered_func_smooth_inorm_run{2}.nii.gz ::: ${list_scandirs[*]} ::: ${list_pad_nruns[*]}"
+
+log_echo "== Band-Pass Filter"
+log_tcmd "parallel --xapply --no-notice -j $njobs --eta func07_filter.sh --lp ${params[low_pass]} --hp ${params[high_pass]} -i {1}/prefiltered_func_smooth_inorm_run{2}.nii.gz -o {1}/filtered_func_run{2}.nii.gz ::: ${list_scandirs[*]} ::: ${list_pad_nruns[*]}"
+
+
+if [ $reg == true ]; then
+  log_echo "=== Registration"
+  log_echo "Temp hack for getting white matter from freesurfer segmentation"
+  log_tcmd "3dcalc -a ${anat[segment]}/aseg/left_cerebral_white_matter.nii.gz -b ${anat[segment]}/aseg/right_cerebral_white_matter.nii.gz -expr 'step(a+b)' -prefix ${anat[segment_wm]}" "${anat[segment_wm]}"
+  log_tcmd "bash func03_register_highres.sh -i '${func[meanfunc]}' -a '${anat[skullstrip_brain]}' -s '${anat[segment_wm]}' --anathead '${anat[head]}' -o '${func[reg]}'"
+  log_tcmd "bash func04_register_standard.sh --epireg ${func[reg]} --anatreg ${anat[reg]}"
+fi

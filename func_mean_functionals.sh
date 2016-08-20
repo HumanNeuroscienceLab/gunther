@@ -23,7 +23,7 @@ cmdarg "i:" "inputs" "Path to functional runs to motion correct"
 cmdarg "o:" "output" "Output mean functional file"
 cmdarg "w:" "workdir" "Path to working directory"
 ## optional inputs
-cmdarg "n" "njobs" "Number of parallel jobs" 1
+cmdarg "j:" "njobs" "Number of parallel jobs" 1
 cmdarg "k" "keepwdir" "Keep working directory" false
 cmdarg "f" "force" "Will overwrite any existing output" false
 cmdarg "l?" "log" "Log file"
@@ -38,7 +38,7 @@ output=${cmdarg_cfg['output']}
 workdir=${cmdarg_cfg['workdir']}
 keepwdir=${cmdarg_cfg['keepwdir']}
 overwrite=${cmdarg_cfg['force']}
-njobs==${cmdarg_cfg['njobs']}
+njobs=${cmdarg_cfg['njobs']}
 _LOG_FILE=${cmdarg_cfg['log']}
 [ ! -z $_LOG_FILE ] && _LOG_FILE=$( readlink -f ${_LOG_FILE} ) # absolute path (if exists)
 
@@ -46,7 +46,6 @@ ext=".nii.gz"
 
 nruns=${#inputs[@]}
 outdir=$(dirname $outprefix)
-echo "$nruns runs"
 
 old_afni_deconflict=$AFNI_DECONFLICT
 if [ $overwrite == true ]; then
@@ -62,6 +61,8 @@ check_logfile
 
 log_echo ""
 log_echo "RUNNING: $0 $@"
+log_echo "- nruns: $nruns"
+log_echo "- njobs: $njobs"
 
 
 #### Checks/Setup ####
