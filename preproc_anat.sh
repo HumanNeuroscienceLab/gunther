@@ -1,6 +1,6 @@
 #!/bin/bash
 
-export GUNTHERDIR=/mnt/nfs/share/scripts/gunther # HACK
+#export GUNTHERDIR=/mnt/nfs/share/scripts/gunther # HACK
 
 # Goals
 # -----

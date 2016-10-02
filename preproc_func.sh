@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 
 
-export GUNTHERDIR=/mnt/nfs/share/scripts/gunther # HACK
+#export GUNTHERDIR=/mnt/nfs/share/scripts/gunther # HACK
 
 declare -a inputs
 declare -A params
